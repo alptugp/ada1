@@ -139,7 +139,7 @@ knapsack' wvs c = table ! c
     table = tabulate (0,c) mknapsack
 
     mknapsack :: weight -> value
-    mknapsack c = undefined
+    mknapsack c = maximum 0 [v + table ! (c - w) | (_, w, v) <- wvs, w <= c]
 
 knapsack''
   :: forall name weight value .
