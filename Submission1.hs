@@ -25,8 +25,9 @@ import Control.DeepSeq
 import Data.Coerce (coerce)
 
 import Data.Array
-import Data.List (unfoldr, nub, sortBy, (\\))
+import Data.List (unfoldr, nub, sortBy, (\\), maximumBy, delete)
 import Data.Map (Map)
+import Data.Bifunctor
 import qualified Data.Map as M
 
 import qualified Data.Binary as B
@@ -151,12 +152,12 @@ knapsack'' wvs c = table ! c
     table = tabulate (0,c) mknapsack
 
     mknapsack :: weight -> (value, [name])
-    mknapsack c = undefined
+    mknapsack c = maximumBy (compare `on` fst) ((0, []) : [(v + fst (table ! (c - w)), n : (snd (table ! (c - w)))) | (n, w, v) <- wvs, w <= c])
 
 bknapsack :: forall name weight value .
-  (Ord weight, Num weight, Ord value, Num value) =>
+  (Eq name, Ord weight, Num weight, Ord value, Num value) =>
   [(name, weight, value)] -> weight -> (value, [name])
-bknapsack = undefined
+bknapsack wvs c = maximumBy (compare `on` fst) ((0, []) : [(v + fst (bknapsack (delete (n, w, v) wvs) (c - w)), n : snd (bknapsack (delete (n, w, v) wvs) (c - w))) | (n,w,v) <- wvs , w <= c ]) 
 
 maxBy :: Ord b => (a -> b) -> a -> a -> a
 maxBy f x y = case compare (f x) (f y) of
@@ -167,7 +168,14 @@ bknapsack' :: forall name weight value .
   (Ord weight, Num weight, Ord value, Num value) =>
   [(name, weight, value)] -> Int ->
   weight -> (value, [name])
-bknapsack' = undefined
+bknapsack' _ 0 _ = (0, [])
+bknapsack' ((n, w, v) : wvs) i c
+  | w <= c = maxBy fst helper helper'
+  | otherwise = helper
+  where
+    helper = bknapsack' wvs (i - 1) c 
+    helper' = bimap (v +) (n :) (bknapsack' wvs (i - 1) (c - w))
+
 
 bknapsack'' :: forall name weight value .
   (Ord name, Ix weight, Ord weight, Num weight, 
@@ -350,14 +358,18 @@ dijkstra g us ps
   | isEmpty ps  = []
   | t `elem` us =
       let us' :: [v]
-          us' = undefined
+          us' = delete t us
           ps'' :: pqueue (Path e)
-          ps'' = undefined
-      in p : dijkstra g us' ps''
-  | otherwise  = dijkstra g us ps'
+          ps'' = insert' (f path) paths
+      in path : dijkstra g us' ps''
+  | otherwise  = dijkstra g us paths
   where
-    (p, ps') = detach ps
-    t = target p
+    (path, paths) = detach ps
+    t = target path
+    r = edgesFrom g t 
+    f pathh@(Path _ (e:_)) = [extend pathh k | k <- r, target e == source k]
+    insert' [] pq = pq
+    insert' (x : xs) pq = insert' xs (insert x pq)
 
 data Heap a = Heap (a -> a -> Ordering) (Tree a)
 data Tree a = Nil | Node Int (Tree a) a (Tree a)
@@ -381,26 +393,34 @@ mergeHeap :: Heap a -> Heap a -> Heap a
 mergeHeap (Heap cmp l) (Heap _ r) = Heap cmp (mergeTree cmp l r)
 
 mergeTree :: (a -> a -> Ordering) -> Tree a -> Tree a -> Tree a
-mergeTree cmp l r = undefined
+mergeTree comp left Nil = left
+mergeTree comp Nil right = right
+mergeTree comp left@(Node _ leftLeft leftNode leftRight) right@(Node _ rightLeft rightNode rightRight)
+  | leftNode > rightNode = node rightLeft rightNode (mergeTree comp left rightRight)
+  | otherwise = node leftLeft leftNode (mergeTree comp leftRight right)
+  where 
+    (>) = gt comp
+  
 
 instance PQueue Heap where
   priority :: Heap a -> (a -> a -> Ordering)
-  priority = undefined
+  priority (Heap comp _) = comp
 
   empty :: (a -> a -> Ordering) -> Heap a
-  empty p = undefined
+  empty comp = Heap comp Nil
 
   isEmpty :: Heap a -> Bool
-  isEmpty = undefined
+  isEmpty (Heap _ Nil) = True
+  isEmpty _ = False
 
   insert :: a -> Heap a -> Heap a
-  insert = undefined
+  insert nd (Heap comp tree) = mergeHeap (Heap comp (Node 1 Nil nd Nil)) (Heap comp tree)
 
   extract :: Heap a -> a
-  extract = undefined
+  extract (Heap _ (Node _ _ nd _)) = nd 
 
   discard :: Heap a -> Heap a
-  discard = undefined
+  discard (Heap comp (Node _ left _ right)) = mergeHeap (Heap comp left) (Heap comp right)
 
 shortestPaths' :: forall g e v . Graph g e v
                => g -> v -> [Path e]
