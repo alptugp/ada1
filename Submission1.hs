@@ -176,13 +176,22 @@ bknapsack' ((n, w, v) : wvs) i c
     helper = bknapsack' wvs (i - 1) c 
     helper' = bimap (v +) (n :) (bknapsack' wvs (i - 1) (c - w))
 
-
 bknapsack'' :: forall name weight value .
   (Ord name, Ix weight, Ord weight, Num weight, 
     Ord value, Num value) =>
   [(name, weight, value)] -> weight -> (value, [name])
-bknapsack'' = undefined
-
+bknapsack'' wvs c = table ! (length wvs, c)
+  where
+    helper (_, 0) = (0, [])
+    helper (0, _) = (0, [])
+    helper (j, w)
+      | wj <= w = maxBy fst (table ! (j - 1, w)) (bimap (vj +) (nj :) (table ! (j - 1, w - wj)))
+      | otherwise = table ! (j - 1, w)
+      where
+        (nj, wj, vj) = (ns !! (j - 1), ws !! (j - 1), vs !! (j - 1))
+        (ns, ws, vs) = unzip3 wvs
+    table = array ((0, 0), (length wvs, c)) [((row, col), helper (row, col)) | (row, col) <- range ((0, 0), (length wvs, c))] 
+  
 optimise :: GameState -> Source -> (Growth, [PlanetId])
 optimise st s@(Source p)
   = bknapsack'' (targetPlanets st s) (shipsOnPlanet st p)
@@ -433,16 +442,26 @@ newtype AdjList e v = AdjList [(v, [e])]
 
 instance (Eq e, Edge e v) =>
      Graph (AdjList e v) e v where
-  vertices  (AdjList ves)   = undefined
-  edges     (AdjList ves)   = undefined
-  edgesFrom (AdjList ves) s = undefined
-  edgesTo   (AdjList ves) t = undefined
-  velem v   (AdjList ves)   = undefined
-  eelem e   (AdjList ves)   = undefined
+  vertices  (AdjList ves)   = [fst v | v <- ves]
+  edges     (AdjList ves)   = concatMap snd ves
+  edgesFrom (AdjList ves@(v:vs)) s 
+    | fst v == s = snd v
+    | ves == [] = []
+    | otherwise = edgesFrom (AdjList vs) s
+  
+  edgesTo   (AdjList ves@(v:vs)) t 
+    | ves == [] = []
+  edgesTo l@(AdjList ves) t = filter (\t' -> target t' == t) (edges l) 
+  velem v l@(AdjList ves)   = elem v (vertices l) 
+  eelem e l@(AdjList ves)   = elem e (edges l)
 
 conflictZones :: GameState -> PlanetId -> PlanetId
   -> ([PlanetId], [PlanetId], [PlanetId])
-conflictZones st p q = undefined
+conflictZones st p q = (helper (\(_, (e, e')) -> e /= -1 && (e' == -1 || e < e')), helper (\(_, (e, e')) -> e /= -1 && e == e'), helper (\(_, (e, e')) -> e' /= -1 && (e == -1 || e > e')))
+  where 
+    weight' ss tt = if null (edgesTo (shortestPaths' st ss) tt) then -1 else weight (head (edgesTo (shortestPaths' st ss) tt))
+    weights vv = (vv, (weight' p vv, weight' q vv))
+    helper x = map fst (filter x (map weights (vertices st)))
 
 deriving instance Eq Player
 deriving instance Show Player
